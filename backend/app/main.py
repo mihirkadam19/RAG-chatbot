@@ -52,11 +52,12 @@ SUPABASE_KEY   = os.environ.get("SUPABASE_KEY", "")
 
 EMBED_MODEL  = "text-embedding-3-small"
 CHAT_MODEL   = "gpt-4o-mini"
-TOP_K        = 5   # number of chunks to retrieve per question
+TOP_K        = 10   # number of chunks to retrieve per question
 
 SYSTEM_PROMPT = """You are a helpful training assistant for student staff.
-Answer the user's question using ONLY the training material provided below.
-If the answer is not covered in the material, say so clearly — do not guess.
+Answer the user's question using the training material provided below.
+If the material contains anything even partially related to the question, use it to help answer.
+Only say you don't have information if the material is completely unrelated.
 Be concise, friendly, and use plain language."""
 
 # ── startup checks ────────────────────────────────────────────────────────────
@@ -101,11 +102,15 @@ def embed_question(question: str) -> list[float]:
     return resp.data[0].embedding
 
 
-def retrieve_chunks(embedding: list[float]) -> list[dict]:
+def retrieve_chunks(embedding: list[float], question: str) -> list[dict]:
     log.info("Querying Supabase for top %d chunks.", TOP_K)
     result = sb.rpc(
         "match_chunks",
-        {"query_embedding": embedding, "match_count": TOP_K},
+        {
+            "query_embedding": embedding,
+            "query_text": question,
+            "match_count": TOP_K
+        },
     ).execute()
     chunks = result.data or []
     log.info("Retrieved %d chunk(s). Sources: %s",
@@ -155,7 +160,7 @@ def ask(request: QuestionRequest):
 
     try:
         embedding = embed_question(question)
-        chunks    = retrieve_chunks(embedding)
+        chunks = retrieve_chunks(embedding, question)
 
         if not chunks:
             log.warning("No relevant chunks found for question: %r", question)
